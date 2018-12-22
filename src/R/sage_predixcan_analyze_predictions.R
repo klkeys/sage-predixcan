@@ -1,13 +1,13 @@
-###!/usr/bin/env Rscript --vanilla
+#!/usr/bin/env Rscript --vanilla
 # =======================================================================================
 # copyright Asthma Collaboratory (2018)
 # coded by Kevin L. Keys
 #
-# This script processes and analyzes PrediXcan predictions in SAGE data
+# This script processes and analyzes PrediXcan predictions in SAGE data 
 # =======================================================================================
 
 # =======================================================================================
-# load libraries
+# load libraries 
 # =======================================================================================
 library(data.table)
 library(purrr)
@@ -16,7 +16,7 @@ library(ggplot2)
 library(dplyr)
 
 # =======================================================================================
-# subroutines
+# subroutines 
 # =======================================================================================
 
 lmtest = function(x, lm.formula) {
@@ -24,7 +24,7 @@ lmtest = function(x, lm.formula) {
     n = dim(x.nona)[1]
     if ( n < 1 ) {
         return(data.table(Gene = x$Gene, R2 = NA, N = 0))
-    }
+    } 
     my.lm = lm(formula(lm.formula), data = x.nona, na.action = na.omit)
     return(data.table(Gene = x$Gene, R2 = summary(my.lm)$r.squared, N = n))
 }
@@ -35,17 +35,16 @@ cortest = function(x, cor.formula) {
     n = dim(x.nona)[1]
     if ( n < 1 ) {
         return(data.table(Gene = x$Gene, Correlation = NA, Corr.p.value = NA))
-    }
+    } 
     my.cortest = cor.test(formula(cor.formula), x.nona, method = "spearman", na.action = na.omit)
     return(data.table(Gene = x.nona$Gene, Correlation = my.cortest$estimate, Corr.p.value = my.cortest$p.value))
 }
 
 # =======================================================================================
-# file and directory paths
+# file and directory paths 
 # =======================================================================================
-predixcan.dir  = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan")
-data.dir       = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "data")
-results.dir    = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "sage_results")
+predixcan.dir  = file.path(Sys.getenv("HOME"), "Desktop", "gala_sage", "rnaseq", "predixcan")
+data.dir       = file.path(Sys.getenv("HOME"), "Desktop", "gala_sage", "rnaseq", "data")
 
 dgn.path       = file.path(predixcan.dir, "DGN",  "DGN_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
 gtex6.path     = file.path(predixcan.dir, "GTEx", "GTEx_v6p_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
@@ -57,17 +56,7 @@ mesa.all.path  = file.path(predixcan.dir, "MESA", "MESA_ALL_predixcan_prediction
 
 sage.rna.path  = file.path(data.dir, "sage_39_wgs_for_rnaseq_expression_sorted_headered_nocomment.bed")
 
-# set plot type before defining paths to save plots
-plot.type = "pdf"
-
-my.boxplot.r2.path     = file.path(results.dir, paste0("all.r2.commongenes.boxplot.", plot.type))
-my.violinplot.r2.path  = file.path(results.dir, paste0("all.r2.commongenes.violinplot.", plot.type))
-my.hist.r2.path        = file.path(results.dir, paste0("all.r2.commongenes.histogram.", plot.type))
-my.hist.rho.path       = file.path(results.dir, paste0("all.rho.commongenes.histogram.", plot.type))
-my.boxplot.rho.path    = file.path(results.dir, paste0("all.rho.commongenes.boxplot.", plot.type))
-my.violinplot.rho.path = file.path(results.dir, paste0("all.rho.commongenes.violinplot.", plot.type))
-
-Rdata.path = file.path(results.dir, "sage_predixcan_allplots.Rdata")
+rdata.path     = file.path("sage_predixcan_allresults_allplots.Rdata")
 
 # =======================================================================================
 # load data
@@ -83,7 +72,7 @@ mesa.all  = fread(mesa.all.path)
 sage = fread(sage.rna.path, header = TRUE)
 
 # =======================================================================================
-# merge data into single data frame
+# merge data into single data frame  
 # =======================================================================================
 
 # must rename columns of each data.table, particularly the ones with predicted expression values
@@ -105,13 +94,13 @@ sage.predixcan.all = merge(sage.melt, predixcan.all, by = c("Gene", "SubjectID")
 
 
 # =======================================================================================
-# analyze predictions
+# analyze predictions 
 # =======================================================================================
 
 # seed a list to save results
 ### NOT DONE!!!! ####
 ### preallocate the list with correct names
-repo.results.predvmeas = list()
+repo.results.predvmeas = list() 
 
 
 # compute genewise regressions
@@ -139,31 +128,18 @@ for (i in 1:length(repos)) {
         #na.omit %>%
         unique # need this because inelegant subroutine prints repeated rows, 1 per sample instead of 1 per gene group
     colnames(corrs) = c("Gene", paste0("Corr_", my.repo), paste0("Corr_pval_", my.repo))
-
+    
     my.results = merge(r2s, corrs, by = c("Gene"), all = TRUE)
-    repo.results.predvmeas[[my.repo]] = my.results
-
+    repo.results.predvmeas[[my.repo]] = my.results 
+    
 }
 
-# recover memory by destroying objects that are no longer needed
 predixcan.all = sage.melt = corrs = r2s = FALSE
 gc()
-
-# perform full join of results tables
-# then destroy list of results, since that too is no longer needed
 sage.predixcan.all.results = repo.results.predvmeas %>% reduce(full_join, by = "Gene") %>% as.data.table
 repo.results.predvmeas = FALSE
 gc()
 
-# =======================================================================================
-# gather testing metrics
-# =======================================================================================
-
-# compare imputation performance from all four prediction weights
-# must first load GTEx v7 testing R2s from PredictDB
-predixcan.gtex7.r2s.path =  file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan", "gtex7.testR2.txt")
-
-predixcan.gtex7.r2s = fread(predixcan.gtex7.r2s.path)
 
 # =======================================================================================
 # plot results
@@ -171,17 +147,45 @@ predixcan.gtex7.r2s = fread(predixcan.gtex7.r2s.path)
 
 # set color palette and boxplot labels
 my.colors = c("blue", "orange", "red", "gold")
+#my.colors = c("blue", "red", "gold")
 
 # gplot2 colorblind-friendly palette with grey:
-cbPalette = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-my.boxplot.labels = c("GTEx v6p", "GTEx v7", "DGN", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL", "GTEx7 Test")
+cbPalette = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999", "#E69F00", "#56B4E9", "#009E73") 
+my.boxplot.labels = c("GTEx v6p", "GTEx v7", "DGN", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL", "GTEx v7 Test", "MESA AFA Test", "MESA AFHI Test", "MESA CAU Test", "MESA ALL Test")
 
+# compare imputation performance from all four prediction weights
+# must first load GTEx v7 testing R2s from PredictDB
+predixcan.gtex7.metrics.path     = file.path(Sys.getenv("HOME"), "Desktop", "gala_sage", "rnaseq", "predixcan", "gtex7.test.metrics.txt")
+predixcan.mesa.afa.metrics.path  = file.path(Sys.getenv("HOME"), "Desktop", "gala_sage", "rnaseq", "predixcan", "mesa.AFA.test.metrics.txt")
+predixcan.mesa.afhi.metrics.path = file.path(Sys.getenv("HOME"), "Desktop", "gala_sage", "rnaseq", "predixcan", "mesa.AFHI.test.metrics.txt")
+predixcan.mesa.cau.metrics.path  = file.path(Sys.getenv("HOME"), "Desktop", "gala_sage", "rnaseq", "predixcan", "mesa.CAU.test.metrics.txt")
+predixcan.mesa.all.metrics.path  = file.path(Sys.getenv("HOME"), "Desktop", "gala_sage", "rnaseq", "predixcan", "mesa.ALL.test.metrics.txt")
+
+predixcan.gtex7.metrics     = fread(predixcan.gtex7.metrics.path) 
+predixcan.mesa.afa.metrics  = fread(predixcan.mesa.afa.metrics.path) 
+predixcan.mesa.afhi.metrics = fread(predixcan.mesa.afhi.metrics.path) 
+predixcan.mesa.cau.metrics  = fread(predixcan.mesa.cau.metrics.path) 
+predixcan.mesa.all.metrics  = fread(predixcan.mesa.all.metrics.path) 
+
+# must rename columns of each data.table, particularly the ones with predicted expression values
+# this facilitates merging them later
+repos = c("GTEx_v7", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL")
+repo.test = list(predixcan.gtex7.metrics, predixcan.mesa.afa.metrics, predixcan.mesa.afhi.metrics, predixcan.mesa.cau.metrics, predixcan.mesa.all.metrics)
+for (i in 1:length(repos)) {
+    colnames(repo.test[[i]]) = c("Gene", "HUGO", paste0(repos[i], "_test_R2"), paste0(repos[i], "_test_Corr"))
+    repo.test[[i]] = repo.test[[i]][,-2]
+    repo.test[[i]]$Gene = strtrim(repo.test[[i]]$Gene, 15)  ## trim .X, the transcript number to the ENSG ID
+}
+
+# perform a full join of all prediction results
+predixcan.all.test = repo.test %>% reduce(full_join, by = c("Gene")) %>% as.data.table
+repo.test = FALSE; gc()  ## recover memory
 
 # extract coefficients of determination (R2) from genewise summary results
 # make sure to rename the columns!
 all.r2.commongenes = sage.predixcan.all.results %>%
-    merge(., predixcan.gtex7.r2s, by = "Gene", all = T) %>%
-    select(Gene, R2_GTEx_v6p, R2_GTEx_v7, R2_DGN, R2_MESA_AFA, R2_MESA_AFHI, R2_MESA_CAU, R2_MESA_ALL, GTEx7_test_R2_avg) %>%
+    merge(., predixcan.all.test, by = "Gene", all = T) %>%
+    select(Gene, R2_GTEx_v6p, R2_GTEx_v7, R2_DGN, R2_MESA_AFA, R2_MESA_AFHI, R2_MESA_CAU, R2_MESA_ALL, GTEx_v7_test_R2, MESA_AFA_test_R2, MESA_AFHI_test_R2, MESA_CAU_test_R2, MESA_ALL_test_R2) %>%
     as.data.table %>%
     na.omit %>%
     melt
@@ -191,7 +195,7 @@ setorderv(all.r2.commongenes, "Prediction.Weights")
 # will produce three kinds of summary plots:
 # (1): boxplot
 # (2): violin plot
-# (3): histogram + density plot
+# (3): histogram + density plot 
 my.boxplot.r2 = ggplot(all.r2.commongenes, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
     geom_boxplot() +
     xlab("Prediction Weight Set") +
@@ -199,6 +203,7 @@ my.boxplot.r2 = ggplot(all.r2.commongenes, aes(x = Prediction.Weights, y = R2, f
     ggtitle(expression(paste("Distribution of ", R^{2}, " across different prediction weight sets"))) +
     scale_fill_manual(values = cbPalette) +
     scale_x_discrete(labels = my.boxplot.labels) +
+    ylim(-0.1, 1) +
     theme(legend.position = "none")
 
 my.violinplot.r2 = ggplot(all.r2.commongenes, aes(x = Prediction.Weights, y = R2)) +
@@ -214,19 +219,16 @@ my.hist.r2 = ggplot(all.r2.commongenes, aes(x = R2)) +
     ylab(expression(R^{2})) +
     ggtitle("Distribution of R2 across different prediction weight sets") +
     facet_wrap(~ Prediction.Weights)
-
+ 
 # save plots to file
-#ggsave(plot = my.boxplot.r2,    filename = my.boxplot.r2.path,    dpi = 300, type = "cairo")
-#ggsave(plot = my.violinplot.r2, filename = my.violinplot.r2.path, dpi = 300, type = "cairo")
-#ggsave(plot = my.hist.r2,       filename = my.hist.r2.path,       dpi = 300, type = "cairo")
+ggsave(plot = my.boxplot.r2, filename = "all.r2.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+ggsave(plot = my.violinplot.r2, filename = "all.r2.commongenes.violinplot.png", dpi = 300, type = "cairo")
+ggsave(plot = my.hist.r2, filename = "all.r2.commongenes.histogram.png", dpi = 300, type = "cairo")
 
-ggsave(plot = my.boxplot.r2,    filename = my.boxplot.r2.path) 
-ggsave(plot = my.violinplot.r2, filename = my.violinplot.r2.path)
-ggsave(plot = my.hist.r2,       filename = my.hist.r2.path)
 # do same, but for correlations instead of R2s
 all.rho.commongenes = sage.predixcan.all.results %>%
-    merge(., predixcan.gtex7.r2s, by = "Gene", all = T) %>%
-    select(Gene, Corr_GTEx_v6p, Corr_GTEx_v7, Corr_DGN, Corr_MESA_AFA, Corr_MESA_AFHI, Corr_MESA_CAU, Corr_MESA_ALL, GTEx7_test_rho_avg) %>%
+    merge(., predixcan.all.test, by = "Gene", all = T) %>%
+    select(Gene, Corr_GTEx_v6p, Corr_GTEx_v7, Corr_DGN, Corr_MESA_AFA, Corr_MESA_AFHI, Corr_MESA_CAU, Corr_MESA_ALL, GTEx_v7_test_Corr, MESA_AFA_test_Corr, MESA_AFHI_test_Corr, MESA_CAU_test_Corr, MESA_ALL_test_Corr) %>%
     as.data.table %>%
     na.omit %>%
     melt
@@ -254,13 +256,29 @@ my.violinplot.rho = ggplot(all.rho.commongenes, aes(x = Prediction.Weights, y = 
     ylab("Correlations") +
     ggtitle("Distribution of correlations across different prediction weight sets")
 
-#ggsave(plot = my.hist.rho,       filename = my.hist.rho.path      , dpi = 300, type = "cairo")
-#ggsave(plot = my.boxplot.rho,    filename = my.boxplot.rho.path   , dpi = 300, type = "cairo")
-#ggsave(plot = my.violinplot.rho, filename = my.violinplot.rho.path, dpi = 300, type = "cairo")
+ggsave(plot = my.boxplot.rho, filename = "all.rho.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+ggsave(plot = my.hist.rho, filename = "all.rho.commongenes.histogram.png")
+ggsave(plot = my.violinplot.rho, filename = "all.rho.commongenes.violinplot.png")
 
-ggsave(plot = my.hist.rho,       filename = my.hist.rho.path)
-ggsave(plot = my.boxplot.rho,    filename = my.boxplot.rho.path)
-ggsave(plot = my.violinplot.rho, filename = my.violinplot.rho.path)
+# compute some statistics
+r2.summaries  = all.r2.commongenes %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
+rho.summaries = all.rho.commongenes %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
 
-# save output for easy reload
-save.image(Rdata.path)
+# add plot with "well imputed" genes in GTEx 7
+gtex7.plot = ggplot(gtex7.results, aes(x = GTEx_v7_test_R2, y = R2_GTEx_v7)) +
+    geom_point() +
+    geom_abline(linetype = "dotted", color = "red", intercept = 0) +
+    xlim(0.2,0.7) +
+    ylim(0, 0.7) +
+    geom_smooth(formula = y ~ x, method = "lm", se = TRUE) +
+    xlab("PredictDB training R2 in GTEx v7") +
+    ylab("Predixcan R2 in SAGE") +
+    ggtitle("PrediXcan performance in SAGE with GTEx v7 weights")
+
+# some numbers for that plot:
+r2.mean = mean(gtex7.results$R2_GTEx_v7)
+ci.hi = mean(gtex7.results$R2_GTEx_v7) + 1.96*sd(gtex7.results$R2_GTEx_v7)
+ci.lo = mean(gtex7.results$R2_GTEx_v7) - 1.96*sd(gtex7.results$R2_GTEx_v7)
+
+# save Rdata file
+save.image(rdata.path)
