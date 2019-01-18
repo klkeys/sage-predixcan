@@ -264,21 +264,5 @@ ggsave(plot = my.violinplot.rho, filename = "all.rho.commongenes.violinplot.png"
 r2.summaries  = all.r2.commongenes %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
 rho.summaries = all.rho.commongenes %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
 
-# add plot with "well imputed" genes in GTEx 7
-gtex7.plot = ggplot(gtex7.results, aes(x = GTEx_v7_test_R2, y = R2_GTEx_v7)) +
-    geom_point() +
-    geom_abline(linetype = "dotted", color = "red", intercept = 0) +
-    xlim(0.2,0.7) +
-    ylim(0, 0.7) +
-    geom_smooth(formula = y ~ x, method = "lm", se = TRUE) +
-    xlab("PredictDB training R2 in GTEx v7") +
-    ylab("Predixcan R2 in SAGE") +
-    ggtitle("PrediXcan performance in SAGE with GTEx v7 weights")
-
-# some numbers for that plot:
-r2.mean = mean(gtex7.results$R2_GTEx_v7)
-ci.hi = mean(gtex7.results$R2_GTEx_v7) + 1.96*sd(gtex7.results$R2_GTEx_v7)
-ci.lo = mean(gtex7.results$R2_GTEx_v7) - 1.96*sd(gtex7.results$R2_GTEx_v7)
-
 # save Rdata file
 save.image(rdata.path)
