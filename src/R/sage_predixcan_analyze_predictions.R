@@ -158,7 +158,7 @@ my.colors = c("blue", "orange", "red", "gold")
 
 # gplot2 colorblind-friendly palette with grey:
 cbPalette = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999", "#E69F00", "#56B4E9", "#009E73") 
-my.boxplot.labels = c("GTEx v6p", "GTEx v7", "DGN", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL", "GTEx v7 Test", "MESA AFA Test", "MESA AFHI Test", "MESA CAU Test", "MESA ALL Test")
+my.boxplot.labels = c("GTEx v6p", "GTEx v7", "DGN", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL", "Test: GTEx v7", "Test: MESA AFA", "Test: MESA AFHI", "Test: MESA CAU", "Test: MESA ALL")
 
 # compare imputation performance from all four prediction weights
 # must first load GTEx v7 testing R2s from PredictDB
@@ -176,7 +176,7 @@ predixcan.mesa.all.metrics  = fread(predixcan.mesa.all.metrics.path)
 
 # must rename columns of each data.table, particularly the ones with predicted expression values
 # this facilitates merging them later
-repos.test = c("GTEx_v7_TEST", "MESA_AFA_TEST", "MESA_AFHI_TEST", "MESA_CAU_TEST", "MESA_ALL_TEST")
+repos.test = c("Test: GTEx_v7", "Test: MESA_AFA", "Test: MESA_AFHI", "Test: MESA_CAU", "Test: MESA_ALL")
 repo.test = list(predixcan.gtex7.metrics, predixcan.mesa.afa.metrics, predixcan.mesa.afhi.metrics, predixcan.mesa.cau.metrics, predixcan.mesa.all.metrics)
 for (i in 1:length(repos.test)) {
     #colnames(repo.test[[i]]) = c("Gene", "HUGO", paste0(repos.test[i], "_test_R2"), paste0(repos.test[i], "_test_Corr"))
@@ -213,7 +213,7 @@ my.boxplot.r2 = ggplot(all.r2, aes(x = Prediction.Weights, y = R2, fill = Predic
     geom_boxplot() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
-    ggtitle(expression(paste0("Distribution of ", R^{2}, " across different prediction weight sets over", ngenes.r2, "genes"))) +
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ngenes.r2) ~ "genes")) +
     scale_fill_manual(values = cbPalette) +
     scale_x_discrete(labels = my.boxplot.labels) +
     ylim(-0.1, 1) +
@@ -223,14 +223,14 @@ my.violinplot.r2 = ggplot(all.r2, aes(x = Prediction.Weights, y = R2)) +
     geom_violin() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
-    ggtitle(expression(paste0("Distribution of ", R^{2}, " across different prediction weight sets over ", ngenes.r2, " genes")))
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ngenes.r2) ~ "genes"))
 
 my.hist.r2 = ggplot(all.r2, aes(x = R2)) +
     geom_histogram(aes(y = ..density..)) +
     geom_density() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
-    ggtitle(expression(paste0("Distribution of ", R^{2}, " across different prediction weight sets over ", ngenes.r2, " genes"))) +
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ ngenes.r2 ~ "genes")) +
     facet_wrap(~ Prediction.Weights)
  
 # save plots to file
@@ -253,7 +253,7 @@ my.boxplot.r2.commongenes = ggplot(all.r2.commongenes, aes(x = Prediction.Weight
     geom_boxplot() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
-    ggtitle(expression(paste0("Distribution of ", R^{2}, " across different prediction weight sets over ", ncommongenes.r2, " common genes"))) +
+    ggtitle(bquote("Distribution of " ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2) ~ "common genes")) +
     scale_fill_manual(values = cbPalette) +
     scale_x_discrete(labels = my.boxplot.labels) +
     ylim(-0.1, 1) +
@@ -263,14 +263,14 @@ my.violinplot.r2.commongenes = ggplot(all.r2.commongenes, aes(x = Prediction.Wei
     geom_violin() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
-    ggtitle(expression(paste0("Distribution of ", R^{2}, " across different prediction weight sets over ", ncommongenes.r2, " common genes")))
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2) ~ "common genes"))
 
 my.hist.r2.commongenes = ggplot(all.r2.commongenes, aes(x = R2)) +
     geom_histogram(aes(y = ..density..)) +
     geom_density() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
-    ggtitle(expression(paste0("Distribution of ", R^{2}, " across different prediction weight sets over ", ncommongenes.r2, " common genes"))) +
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2) ~ "common genes")) +
     facet_wrap(~ Prediction.Weights)
 
 # save plots to file
