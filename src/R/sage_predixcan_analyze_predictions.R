@@ -100,8 +100,7 @@ sage.predixcan.all = merge(sage.melt, predixcan.all, by = c("Gene", "SubjectID")
 # =======================================================================================
 
 # seed a list to save results
-### NOT DONE!!!! ####
-### preallocate the list with correct names
+# TODO: can we preallocate the list with correct names?
 repo.results.predvmeas = list() 
 
 
@@ -113,25 +112,17 @@ for (i in 1:length(repos)) {
 
     r2s = sage.predixcan.all %>%
         group_by(Gene) %>%
-        #na.omit %>%
-        #do(tidy(summary(lm(my.formula, data = .))$r.squared)) %>%
         do(lmtest(., my.lm.formula)) %>%
-        #select(Gene, x) %>%
         as.data.table %>%
-        #na.omit %>%
         unique
-    #colnames(r2s) = c("Gene", paste0("R2_", my.repo), paste0("Num_Pred_", my.repo))
     colnames(r2s) = c("Gene", "R2", "Num_Pred")
     r2s$Repo = my.repo
 
     corrs = sage.predixcan.all %>%
         group_by(Gene) %>%
-       # na.omit %>%
         do(cortest(., my.corr.formula)) %>% # use previous subroutine to perform correlation test and extract three columns (gene, correlation, p-value)
         as.data.table %>% # cast as data.table to purge duplicate rows
-        #na.omit %>%
         unique # need this because inelegant subroutine prints repeated rows, 1 per sample instead of 1 per gene group
-    #colnames(corrs) = c("Gene", paste0("Corr_", my.repo), paste0("Corr_pval_", my.repo))
     colnames(corrs) = c("Gene", "Corr", "Corr_pval")
     corrs$Repo = my.repo
     
@@ -142,7 +133,6 @@ for (i in 1:length(repos)) {
 
 predixcan.all = sage.melt = corrs = r2s = FALSE
 gc()
-#sage.predixcan.all.results = repo.results.predvmeas %>% reduce(full_join, by = "Gene") %>% as.data.table
 sage.predixcan.all.results = rbindlist(repo.results.predvmeas) 
 repo.results.predvmeas = FALSE
 gc()
@@ -154,7 +144,6 @@ gc()
 
 # set color palette and boxplot labels
 my.colors = c("blue", "orange", "red", "gold")
-#my.colors = c("blue", "red", "gold")
 
 # gplot2 colorblind-friendly palette with grey:
 cbPalette = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999", "#E69F00", "#56B4E9", "#009E73") 
@@ -179,28 +168,21 @@ predixcan.mesa.all.metrics  = fread(predixcan.mesa.all.metrics.path)
 repos.test = c("Test: GTEx_v7", "Test: MESA_AFA", "Test: MESA_AFHI", "Test: MESA_CAU", "Test: MESA_ALL")
 repo.test = list(predixcan.gtex7.metrics, predixcan.mesa.afa.metrics, predixcan.mesa.afhi.metrics, predixcan.mesa.cau.metrics, predixcan.mesa.all.metrics)
 for (i in 1:length(repos.test)) {
-    #colnames(repo.test[[i]]) = c("Gene", "HUGO", paste0(repos.test[i], "_test_R2"), paste0(repos.test[i], "_test_Corr"))
     colnames(repo.test[[i]]) = c("Gene", "Repo", "R2", "Corr")
-    #repo.test[[i]] = repo.test[[i]][,-2]
     repo.test[[i]]$Repo = repos.test[i]
     repo.test[[i]]$Gene = strtrim(repo.test[[i]]$Gene, 15)  ## trim .X, the transcript number to the ENSG ID
 }
 
 # perform a full join of all prediction results
-#predixcan.all.test = repo.test %>% reduce(full_join, by = c("Gene")) %>% as.data.table
 predixcan.all.test = rbindlist(repo.test)
 repo.test = FALSE; gc()  ## recover memory
 
 # extract coefficients of determination (R2) from genewise summary results
 # make sure to rename the columns!
-#all.r2.commongenes = sage.predixcan.all.results %>%
-    #merge(., predixcan.all.test, by = "Gene", all = T) %>%
-    #select(Gene, R2_GTEx_v6p, R2_GTEx_v7, R2_DGN, R2_MESA_AFA, R2_MESA_AFHI, R2_MESA_CAU, R2_MESA_ALL, GTEx_v7_test_R2, MESA_AFA_test_R2, MESA_AFHI_test_R2, MESA_CAU_test_R2, MESA_ALL_test_R2) %>%
 all.r2 = rbindlist(list(sage.predixcan.all.results, predixcan.all.test), fill = TRUE) %>%
     select(Gene, Repo, R2) %>%
     as.data.table %>%
-    na.omit #%>%
-    #melt
+    na.omit
 colnames(all.r2) = c("Gene", "Prediction.Weights", "R2")
 setorderv(all.r2, "Prediction.Weights")
 ngenes.r2 = all.r2 %>% select(Gene) %>% unlist %>% sort %>% unique %>% length
@@ -280,14 +262,10 @@ ggsave(plot = my.hist.r2.commongenes, filename = "all.r2.commongenes.histogram.p
 
 
 # do same, but for correlations instead of R2s
-#all.rho.commongenes = sage.predixcan.all.results %>%
-#    merge(., predixcan.all.test, by = "Gene", all = T) %>%
-    #select(Gene, Corr_GTEx_v6p, Corr_GTEx_v7, Corr_DGN, Corr_MESA_AFA, Corr_MESA_AFHI, Corr_MESA_CAU, Corr_MESA_ALL, GTEx_v7_test_Corr, MESA_AFA_test_Corr, MESA_AFHI_test_Corr, MESA_CAU_test_Corr, MESA_ALL_test_Corr) %>%
 all.rho = rbindlist(list(sage.predixcan.all.results, predixcan.all.test), fill = TRUE) %>%
     select(Gene, Repo, Corr) %>% 
     as.data.table %>%
-    na.omit #%>%
-    #melt
+    na.omit
 colnames(all.rho) = c("Gene", "Prediction.Weights", "Correlation")
 setorderv(all.rho, "Prediction.Weights")
 ngenes.rho = all.rho  %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
