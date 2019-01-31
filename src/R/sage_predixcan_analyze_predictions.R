@@ -40,6 +40,27 @@ cortest = function(x, cor.formula) {
     return(data.table(Gene = x.nona$Gene, Correlation = my.cortest$estimate, Corr.p.value = my.cortest$p.value))
 }
 
+compute.r2.corr.onegene = function(x){
+    the.fit = summary(lm(Predicted_Expr ~ Measured_Expr, data = x)) 
+    my.cortest =  cor.test(~ Predicted_Expr + Measured_Expr, data = x, method = "spearman")
+    my.output = data.frame(
+        "Correlation" = my.cortest$estimate,
+        "Corr_pval" = my.cortest$p.value,
+        "R2" = the.fit$r.squared,
+        "R2_pval" = the.fit$coefficients[2,4]
+    )   
+    return(my.output)
+}
+
+compute.r2.corr = function(df){
+    new.df = df %>% 
+        na.omit %>% 
+        dplyr::group_by(Prediction.Weights, Gene) %>% 
+        do(compute.r2.corr.onegene(.)) %>% 
+        as.data.table
+    return(new.df)
+}
+
 # =======================================================================================
 # file and directory paths 
 # =======================================================================================
@@ -80,11 +101,13 @@ sage = fread(sage.rna.path, header = TRUE)
 repos = c("DGN", "GTEx_v6p", "GTEx_v7", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL")
 repo.results = list(dgn, gtex6, gtex7, mesa.afa, mesa.afhi, mesa.cau, mesa.all)
 for (i in 1:length(repos)) {
-    colnames(repo.results[[i]]) = c("SubjectID", "Gene", paste0("Predicted_Expr_", repos[i]))
+    #colnames(repo.results[[i]]) = c("SubjectID", "Gene", paste0("Predicted_Expr_", repos[i]))
+    colnames(repo.results[[i]]) = c("SubjectID", "Gene", "Predicted_Expr")
+    repo.results[[i]]$Prediction.Weights =  repos[i]
 }
 
 # perform a full join of all prediction results
-predixcan.all = repo.results %>% reduce(full_join, by = c("SubjectID","Gene")) %>% as.data.table
+predixcan.all = repo.results %>% reduce(full_join, by = c("SubjectID", "Gene", "Prediction.Weights", "Predicted_Expr")) %>% as.data.table
 
 # melt measurements prior to merge
 #sage.melt = melt(sage[,-c(1:3)], id.vars = "Gene", variable.name = "SubjectID", value.name = "Measured_Expr")
@@ -99,42 +122,44 @@ sage.predixcan.all = merge(sage.melt, predixcan.all, by = c("Gene", "SubjectID")
 # analyze predictions 
 # =======================================================================================
 
-# seed a list to save results
-# TODO: can we preallocate the list with correct names?
-repo.results.predvmeas = list() 
-
-
-# compute genewise regressions
-for (i in 1:length(repos)) {
-    my.repo = repos[i]
-    my.lm.formula = paste0("Predicted_Expr_", my.repo, " ~ Measured_Expr")
-    my.corr.formula = paste0("~ Predicted_Expr_", my.repo, " + Measured_Expr")
-
-    r2s = sage.predixcan.all %>%
-        group_by(Gene) %>%
-        do(lmtest(., my.lm.formula)) %>%
-        as.data.table %>%
-        unique
-    colnames(r2s) = c("Gene", "R2", "Num_Pred")
-    r2s$Repo = my.repo
-
-    corrs = sage.predixcan.all %>%
-        group_by(Gene) %>%
-        do(cortest(., my.corr.formula)) %>% # use previous subroutine to perform correlation test and extract three columns (gene, correlation, p-value)
-        as.data.table %>% # cast as data.table to purge duplicate rows
-        unique # need this because inelegant subroutine prints repeated rows, 1 per sample instead of 1 per gene group
-    colnames(corrs) = c("Gene", "Corr", "Corr_pval")
-    corrs$Repo = my.repo
-    
-    my.results = merge(r2s, corrs, by = c("Gene", "Repo"), all = TRUE)
-    repo.results.predvmeas[[my.repo]] = my.results 
-    
-}
-
-predixcan.all = sage.melt = corrs = r2s = FALSE
+## seed a list to save results
+## TODO: can we preallocate the list with correct names?
+#repo.results.predvmeas = list() 
+#
+#
+## compute genewise regressions
+#for (i in 1:length(repos)) {
+#    my.repo = repos[i]
+#    my.lm.formula = paste0("Predicted_Expr_", my.repo, " ~ Measured_Expr")
+#    my.corr.formula = paste0("~ Predicted_Expr_", my.repo, " + Measured_Expr")
+#
+#    r2s = sage.predixcan.all %>%
+#        group_by(Gene) %>%
+#        do(lmtest(., my.lm.formula)) %>%
+#        as.data.table %>%
+#        unique
+#    colnames(r2s) = c("Gene", "R2", "Num_Pred")
+#    r2s$Repo = my.repo
+#
+#    corrs = sage.predixcan.all %>%
+#        group_by(Gene) %>%
+#        do(cortest(., my.corr.formula)) %>% # use previous subroutine to perform correlation test and extract three columns (gene, correlation, p-value)
+#        as.data.table %>% # cast as data.table to purge duplicate rows
+#        unique # need this because inelegant subroutine prints repeated rows, 1 per sample instead of 1 per gene group
+#    colnames(corrs) = c("Gene", "Corr", "Corr_pval")
+#    corrs$Repo = my.repo
+#    
+#    my.results = merge(r2s, corrs, by = c("Gene", "Repo"), all = TRUE)
+#    repo.results.predvmeas[[my.repo]] = my.results 
+#    
+#}
+#
+#predixcan.all = sage.melt = corrs = r2s = FALSE
+predixcan.all = sage.melt = FALSE
 gc()
-sage.predixcan.all.results = rbindlist(repo.results.predvmeas) 
-repo.results.predvmeas = FALSE
+#sage.predixcan.all.results = rbindlist(repo.results.predvmeas) 
+sage.predixcan.all.results = compute.r2.corr(sage.predixcan.all)
+#repo.results.predvmeas = FALSE
 gc()
 
 
@@ -168,9 +193,14 @@ predixcan.mesa.all.metrics  = fread(predixcan.mesa.all.metrics.path)
 repos.test = c("Test: GTEx_v7", "Test: MESA_AFA", "Test: MESA_AFHI", "Test: MESA_CAU", "Test: MESA_ALL")
 repo.test = list(predixcan.gtex7.metrics, predixcan.mesa.afa.metrics, predixcan.mesa.afhi.metrics, predixcan.mesa.cau.metrics, predixcan.mesa.all.metrics)
 for (i in 1:length(repos.test)) {
-    colnames(repo.test[[i]]) = c("Gene", "Repo", "R2", "Corr")
-    repo.test[[i]]$Repo = repos.test[i]
-    repo.test[[i]]$Gene = strtrim(repo.test[[i]]$Gene, 15)  ## trim .X, the transcript number to the ENSG ID
+    # note that at this point the 2nd column actually contains HUGE identifiers
+    colnames(repo.test[[i]]) = c("Gene", "Prediction.Weights", "R2", "Correlation")
+
+    # 2nd column now overwritten with repo name
+    repo.test[[i]]$Prediction.Weights = repos.test[i]
+
+    # trim .X, the transcript number to the ENSG ID, starting at 15th character
+    repo.test[[i]]$Gene = strtrim(repo.test[[i]]$Gene, 15)
 }
 
 # perform a full join of all prediction results
@@ -178,20 +208,26 @@ predixcan.all.test = rbindlist(repo.test)
 repo.test = FALSE; gc()  ## recover memory
 
 # extract coefficients of determination (R2) from genewise summary results
-# make sure to rename the columns!
-all.r2 = rbindlist(list(sage.predixcan.all.results, predixcan.all.test), fill = TRUE) %>%
-    select(Gene, Repo, R2) %>%
+all.results = sage.predixcan.all.results %>%
+    select(Prediction.Weights, Gene, R2, Correlation) %>%
+    as.data.table %>%
+    rbind(., predixcan.all.test, use.names = TRUE, fill = TRUE) 
+
+
+
+r2.all = all.results %>%
+    select(Gene, Prediction.Weights, R2) %>%
     as.data.table %>%
     na.omit
-colnames(all.r2) = c("Gene", "Prediction.Weights", "R2")
-setorderv(all.r2, "Prediction.Weights")
-ngenes.r2 = all.r2 %>% select(Gene) %>% unlist %>% sort %>% unique %>% length
+colnames(r2.all) = c("Gene", "Prediction.Weights", "R2")
+setorderv(r2.all, "Prediction.Weights")
+ngenes.r2 = r2.all %>% select(Gene) %>% unlist %>% sort %>% unique %>% length
 
 # will produce three kinds of summary plots:
 # (1): boxplot
 # (2): violin plot
 # (3): histogram + density plot 
-my.boxplot.r2 = ggplot(all.r2, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
+my.boxplot.r2 = ggplot(r2.all, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
     geom_boxplot() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
@@ -201,13 +237,13 @@ my.boxplot.r2 = ggplot(all.r2, aes(x = Prediction.Weights, y = R2, fill = Predic
     ylim(-0.1, 1) +
     theme(legend.position = "none")
 
-my.violinplot.r2 = ggplot(all.r2, aes(x = Prediction.Weights, y = R2)) +
+my.violinplot.r2 = ggplot(r2.all, aes(x = Prediction.Weights, y = R2)) +
     geom_violin() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
     ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ngenes.r2) ~ "genes"))
 
-my.hist.r2 = ggplot(all.r2, aes(x = R2)) +
+my.hist.r2 = ggplot(r2.all, aes(x = R2)) +
     geom_histogram(aes(y = ..density..)) +
     geom_density() +
     xlab("Prediction Weight Set") +
@@ -216,22 +252,21 @@ my.hist.r2 = ggplot(all.r2, aes(x = R2)) +
     facet_wrap(~ Prediction.Weights)
  
 # save plots to file
-ggsave(plot = my.boxplot.r2, filename = "all.r2.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.violinplot.r2, filename = "all.r2.violinplot.png", dpi = 300, type = "cairo")
-ggsave(plot = my.hist.r2, filename = "all.r2.histogram.png", dpi = 300, type = "cairo")
+ggsave(plot = my.boxplot.r2, filename = "sage.predixcan.r2.all.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+ggsave(plot = my.violinplot.r2, filename = "sage.predixcan..r2.violinplot.png", dpi = 300, type = "cairo")
+ggsave(plot = my.hist.r2, filename = "sage.predixcan.r2.all.histogram.png", dpi = 300, type = "cairo")
 
 
 # do for only common genes
-r2.commongenes = all.r2 %>%
-    group_by(Gene) %>%
-    tally %>%
+commongenes.r2 = r2.all %>%
+    count(Gene) %>%
     dplyr::filter(n > 11) %>%
     select(Gene) %>%
     as.data.table
-all.r2.commongenes = all.r2 %>% dplyr::filter(Gene %in% r2.commongenes$Gene)
+r2.commongenes = r2.all %>% dplyr::filter(Gene %in% commongenes.r2$Gene)
 ncommongenes.r2 = r2.commongenes %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
 
-my.boxplot.r2.commongenes = ggplot(all.r2.commongenes, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
+my.boxplot.r2.commongenes = ggplot(r2.commongenes, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
     geom_boxplot() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
@@ -241,13 +276,13 @@ my.boxplot.r2.commongenes = ggplot(all.r2.commongenes, aes(x = Prediction.Weight
     ylim(-0.1, 1) +
     theme(legend.position = "none")
 
-my.violinplot.r2.commongenes = ggplot(all.r2.commongenes, aes(x = Prediction.Weights, y = R2)) +
+my.violinplot.r2.commongenes = ggplot(r2.commongenes, aes(x = Prediction.Weights, y = R2)) +
     geom_violin() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
     ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2) ~ "common genes"))
 
-my.hist.r2.commongenes = ggplot(all.r2.commongenes, aes(x = R2)) +
+my.hist.r2.commongenes = ggplot(r2.commongenes, aes(x = R2)) +
     geom_histogram(aes(y = ..density..)) +
     geom_density() +
     xlab("Prediction Weight Set") +
@@ -256,28 +291,29 @@ my.hist.r2.commongenes = ggplot(all.r2.commongenes, aes(x = R2)) +
     facet_wrap(~ Prediction.Weights)
 
 # save plots to file
-ggsave(plot = my.boxplot.r2.commongenes, filename = "all.r2.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.violinplot.r2.commongenes, filename = "all.r2.commongenes.violinplot.png", dpi = 300, type = "cairo")
-ggsave(plot = my.hist.r2.commongenes, filename = "all.r2.commongenes.histogram.png", dpi = 300, type = "cairo")
+ggsave(plot = my.boxplot.r2.commongenes, filename = "sage.predixcan.r2.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+ggsave(plot = my.violinplot.r2.commongenes, filename = "sage.predixcan.r2.commongenes.violinplot.png", dpi = 300, type = "cairo")
+ggsave(plot = my.hist.r2.commongenes, filename = "sage.predixcan.r2.commongenes.histogram.png", dpi = 300, type = "cairo")
 
 
 # do same, but for correlations instead of R2s
-all.rho = rbindlist(list(sage.predixcan.all.results, predixcan.all.test), fill = TRUE) %>%
-    select(Gene, Repo, Corr) %>% 
+rho.all = all.results %>% 
+    select(Gene, Prediction.Weights, Correlation) %>% 
     as.data.table %>%
     na.omit
-colnames(all.rho) = c("Gene", "Prediction.Weights", "Correlation")
-setorderv(all.rho, "Prediction.Weights")
-ngenes.rho = all.rho  %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
+#colnames(rho.all) = c("Gene", "Prediction.Weights", "Correlation")
+setorderv(rho.all, "Prediction.Weights")
+#ngenes.rho = rho.all  %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
+ngenes.rho = ngenes.r2
 
-my.hist.rho = ggplot(all.rho, aes(x = Correlation)) +
+my.hist.rho = ggplot(rho.all, aes(x = Correlation)) +
     geom_histogram(aes(y = ..density..)) +
     geom_density() +
     xlab("Prediction Weight Set") +
     ylab("Spearman rho") +
     ggtitle(paste0("Distribution of correlations across different prediction weight sets for ", ngenes.rho, " genes")) +
     facet_wrap(~ Prediction.Weights)
-my.boxplot.rho = ggplot(all.rho, aes(x = Prediction.Weights, y = Correlation, fill = Prediction.Weights)) +
+my.boxplot.rho = ggplot(rho.all, aes(x = Prediction.Weights, y = Correlation, fill = Prediction.Weights)) +
     geom_boxplot() +
     xlab("Prediction Weight Set") +
     ylab(expression(paste("Correlations (Spearman ", rho, ")"))) +
@@ -285,33 +321,39 @@ my.boxplot.rho = ggplot(all.rho, aes(x = Prediction.Weights, y = Correlation, fi
     scale_fill_manual(values = cbPalette) +
     theme(legend.position = "none") +
     scale_x_discrete(labels = my.boxplot.labels)
-my.violinplot.rho = ggplot(all.rho, aes(x = Prediction.Weights, y = Correlation)) +
+my.violinplot.rho = ggplot(rho.all, aes(x = Prediction.Weights, y = Correlation)) +
     geom_violin() +
     xlab("Prediction Weight Set") +
     ylab("Correlations") +
     ggtitle(paste0("Distribution of correlations across different prediction weight sets for ", ngenes.rho, " genes"))
 
-ggsave(plot = my.boxplot.rho, filename = "all.rho.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.hist.rho, filename = "all.rho.histogram.png")
-ggsave(plot = my.violinplot.rho, filename = "all.rho.violinplot.png")
+ggsave(plot = my.boxplot.rho, filename = "sage.predixcan.rho.all.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+ggsave(plot = my.hist.rho, filename = "sage.predixcan.rho.all.histogram.png")
+ggsave(plot = my.violinplot.rho, filename = "sage.predixcan.rho.all.violinplot.png")
 
-rho.commongenes = all.rho %>%
-    group_by(Gene) %>%
-    tally %>%
-    dplyr::filter(n > 11) %>%
-    select(Gene) %>%
-    as.data.table
-all.rho.commongenes = all.rho %>% dplyr::filter(Gene %in% rho.commongenes$Gene)
-ncommongenes.rho = all.rho.commongenes %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
+# could filter for rho in common
+# but for basis of comparison, we really should focus on common genes from R2
+#rho.commongenes = all.rho %>%
+#    group_by(Gene) %>%
+#    tally %>%
+#    dplyr::filter(n > 11) %>%
+#    select(Gene) %>%
+#    as.data.table
+#all.rho.commongenes = all.rho %>% dplyr::filter(Gene %in% rho.commongenes$Gene)
+#ncommongenes.rho = all.rho.commongenes %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
+rho.commongenes = rho.all %>% filter(Gene %in% commongenes.r2$Gene)
+commongenes.rho = commongenes.r2
+ncommongenes.rho = ncommongenes.r2
 
-my.hist.rho.commongenes = ggplot(all.rho.commongenes, aes(x = Correlation)) +
+
+my.hist.rho.commongenes = ggplot(rho.commongenes, aes(x = Correlation)) +
     geom_histogram(aes(y = ..density..)) +
     geom_density() +
     xlab("Prediction Weight Set") +
     ylab("Spearman rho") +
     ggtitle(paste0("Distribution of correlations across different prediction weight sets for ", ncommongenes.rho, " genes in common")) +
     facet_wrap(~ Prediction.Weights)
-my.boxplot.rho.commongenes = ggplot(all.rho.commongenes, aes(x = Prediction.Weights, y = Correlation, fill = Prediction.Weights)) +
+my.boxplot.rho.commongenes = ggplot(rho.commongenes, aes(x = Prediction.Weights, y = Correlation, fill = Prediction.Weights)) +
     geom_boxplot() +
     xlab("Prediction Weight Set") +
     ylab(expression(paste("Correlations (Spearman ", rho, ")"))) +
@@ -319,21 +361,79 @@ my.boxplot.rho.commongenes = ggplot(all.rho.commongenes, aes(x = Prediction.Weig
     scale_fill_manual(values = cbPalette) +
     theme(legend.position = "none") +
     scale_x_discrete(labels = my.boxplot.labels)
-my.violinplot.rho.commongenes = ggplot(all.rho.commongenes, aes(x = Prediction.Weights, y = Correlation)) +
+my.violinplot.rho.commongenes = ggplot(rho.commongenes, aes(x = Prediction.Weights, y = Correlation)) +
     geom_violin() +
     xlab("Prediction Weight Set") +
     ylab("Correlations") +
     ggtitle(paste0("Distribution of correlations across different prediction weight sets for ", ncommongenes.rho, " genes in common"))
 
-ggsave(plot = my.boxplot.rho.commongenes, filename = "all.rho.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.hist.rho.commongenes, filename = "all.rho.commongenes.histogram.png", dpi = 300, type = "cairo")
-ggsave(plot = my.violinplot.rho.commongenes, filename = "all.rho.commongenes.violinplot.png", dpi = 300, type = "cairo")
+ggsave(plot = my.boxplot.rho.commongenes, filename = "sage.predixcan.rho.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+ggsave(plot = my.hist.rho.commongenes, filename = "sage.predixcan.rho.commongenes.histogram.png", dpi = 300, type = "cairo")
+ggsave(plot = my.violinplot.rho.commongenes, filename = "sage.predixcan.rho.commongenes.violinplot.png", dpi = 300, type = "cairo")
 
-# compute some statistics
+
+# can now compile some summaries
+
+# how many genes predicted + measured in each repo?
+genes.predicted.perrepo = all.results %>% na.omit %>% count(Prediction.Weights) %>% as.data.table
+
+# how many genes predicted + measured with positive correlation in each repo?
+genes.predicted.poscorr.perrepo = all.results %>% na.omit %>% filter(Correlation > 0) %>% count(Prediction.Weights) %>% as.data.table
+
+# average r2 by repo?
 r2.summaries  = all.r2 %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
+
+# average r2 by repo over common genes?
 r2.commongenes.summaries  = all.r2.commongenes %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
+
+# average rho by repo?
 rho.summaries = all.rho %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
+
+# average rho by repo over common genes?
 rho.commongenes.summaries = all.rho.commongenes %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
+
+# last detail:
+# make plots for common genes with poscorr
+# must get correlations for this to work
+#all.r2.corr = merge(all.r2, all.rho, by = c("Gene", "Prediction.Weights"), all = TRUE)
+commongenes.poscorr.r2 = all.results %>% 
+    na.omit %>% 
+    dplyr::filter(Correlation > 0) %>% 
+    count(Gene) %>% 
+    dplyr::filter(n > 11) %>% 
+    select(Gene) %>% 
+    as.data.table
+r2.commongenes.poscorr = all.r2.corr %>% dplyr::filter(Gene %in% commongenes.poscorr.r2$Gene)
+ncommongenes.r2.poscorr = r2.commongenes.poscorr %>% select(Gene) %>% unlist %>% unname %>% sort %>% unique %>% length 
+
+my.boxplot.r2.commongenes = ggplot(r2.commongenes.poscorr, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
+    geom_boxplot() +
+    xlab("Prediction Weight Set") +
+    ylab(expression(R^{2})) +
+    ggtitle(bquote("Distribution of " ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2.poscorr) ~ "common genes")) +
+    scale_fill_manual(values = cbPalette) +
+    scale_x_discrete(labels = my.boxplot.labels) +
+    ylim(-0.1, 1) +
+    theme(legend.position = "none")
+
+my.violinplot.r2.commongenes = ggplot(r2.commongenes.poscorr, aes(x = Prediction.Weights, y = R2)) +
+    geom_violin() +
+    xlab("Prediction Weight Set") +
+    ylab(expression(R^{2})) +
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2.poscorr) ~ "common genes"))
+
+my.hist.r2.commongenes = ggplot(r2.commongenes.poscorr, aes(x = R2)) +
+    geom_histogram(aes(y = ..density..)) +
+    geom_density() +
+    xlab("Prediction Weight Set") +
+    ylab(expression(R^{2})) +
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2.poscorr) ~ "common genes")) +
+    facet_wrap(~ Prediction.Weights)
+
+# save plots to file
+ggsave(plot = my.boxplot.r2.commongenes, filename = "sage.predixcan.r2.commongenes.poscorr.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+ggsave(plot = my.violinplot.r2.commongenes, filename = "sage.predixcan..r2.commongenes.poscorr.violinplot.png", dpi = 300, type = "cairo")
+ggsave(plot = my.hist.r2.commongenes, filename = "sage.predixcan.r2.commongenes.poscorr.histogram.png", dpi = 300, type = "cairo")
 
 # save Rdata file
 save.image(rdata.path)
