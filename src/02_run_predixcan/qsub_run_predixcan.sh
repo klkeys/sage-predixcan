@@ -11,7 +11,7 @@
 set -o errexit  # -- script exits after a failed command 
 set -o pipefail # -- script outputs exit status of last command that threw nonzero exit status
 set -o nounset  # -- script exists if it tries to use undeclared variables
-set -o xtrace   # -- uncomment for debugging; script will trace what gets executed
+#set -o xtrace   # -- uncomment for debugging; script will trace what gets executed
 
 # user limits: -c max size of core files created
 date
@@ -92,29 +92,29 @@ $Rscript $R_impute_predixcan_genos ${predixcan_input} ${predixcan_imputed}
 # run first with GTEx v6p weights
 # then run with DGN weights, then GTEx v7 weights
 # lastly, run with MESA weights (African American, AfrAm+Hispanic, ALL, Caucasian)
-###$python2 $predixcan \
-###    --predict \
-###    --dosages ${chrdir} \
-###    --dosages_prefix "chr${chr}" \
-###    --samples ${samples_file} \
-###    --weights ${weights_file_GTEx_v6p} \
-###    --output_prefix ${output_pfx_GTEx_v6p}
-###
-###$python2 $predixcan \
-###    --predict \
-###    --dosages ${chrdir} \
-###    --dosages_prefix "chr${chr}" \
-###    --samples ${samples_file} \
-###    --weights ${weights_file_DGN} \
-###    --output_prefix ${output_pfx_DGN}
-###
-###$python2 $predixcan \
-###    --predict \
-###    --dosages ${chrdir} \
-###    --dosages_prefix "chr${chr}" \
-###    --samples ${samples_file} \
-###    --weights ${weights_file_GTEx_v7} \
-###    --output_prefix ${output_pfx_GTEx_v7}
+$python2 $predixcan \
+    --predict \
+    --dosages ${chrdir} \
+    --dosages_prefix "chr${chr}" \
+    --samples ${samples_file} \
+    --weights ${weights_file_GTEx_v6p} \
+    --output_prefix ${output_pfx_GTEx_v6p}
+
+$python2 $predixcan \
+    --predict \
+    --dosages ${chrdir} \
+    --dosages_prefix "chr${chr}" \
+    --samples ${samples_file} \
+    --weights ${weights_file_DGN} \
+    --output_prefix ${output_pfx_DGN}
+
+$python2 $predixcan \
+    --predict \
+    --dosages ${chrdir} \
+    --dosages_prefix "chr${chr}" \
+    --samples ${samples_file} \
+    --weights ${weights_file_GTEx_v7} \
+    --output_prefix ${output_pfx_GTEx_v7}
 
 $python2 $predixcan \
     --predict \

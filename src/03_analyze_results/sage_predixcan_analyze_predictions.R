@@ -14,6 +14,45 @@ library(purrr)
 library(broom)
 library(ggplot2)
 library(dplyr)
+library(optparse)
+
+# parse command line arguments
+option_list = list(
+    make_option(
+        c("-a", "--predixcan-dir"),
+        type    = "character",
+        default = NULL,
+        help    = "Data where PrediXcan output are stored.",
+        metavar = "character"
+    ),
+    make_option(
+        c("-b", "--data-dir"),
+        type    = "character",
+        default = NULL,
+        help    = "Directory where RNA-Seq data are stored.",
+        metavar = "character"
+    ),
+    make_option(
+        c("-c", "--output-dir"),
+        type    = "character",
+        default = NULL,
+        help    = "Directory to store output.",
+        metavar = "character"
+    ),
+    make_option(
+        c("-d", "--plot-type"),
+        type    = "character",
+        default = "png",
+        help    = "Desired file type for plots of results, given as a file extension (e.g. PNG, JPEG, PDF, TIFF, SVG)",
+        metavar = "character"
+    )
+)
+
+opt_parser = OptionParser(option_list = option_list)
+opt = parse_args(opt_parser, convert_hyphens_to_underscores = TRUE)
+
+cat("Parsed options:\n\n")
+print(opt)
 
 # =======================================================================================
 # subroutines 
@@ -61,11 +100,25 @@ compute.r2.corr = function(df){
     return(new.df)
 }
 
+save.plots = function(g1, name1, g2, name2, g3, name3){
+    # boxplot
+    ggsave(plot = g1, filename = name1, dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
+
+    # histogram
+    ggsave(plot = g2, filename = name2, dpi = 300, type = "cairo")
+
+    # violinplot
+    ggsave(plot = g3, filename = name3, dpi = 300, type = "cairo")
+
+    return()
+}
+
 # =======================================================================================
 # file and directory paths 
 # =======================================================================================
-predixcan.dir  = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan")
-data.dir       = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "data")
+predixcan.dir  = opt$predixcan_dir 
+data.dir       = opt$data.dir
+output.dir     = opt$output_dir
 
 dgn.path       = file.path(predixcan.dir, "DGN",  "DGN_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
 gtex6.path     = file.path(predixcan.dir, "GTEx", "GTEx_v6p_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
@@ -77,7 +130,7 @@ mesa.all.path  = file.path(predixcan.dir, "MESA", "MESA_ALL_predixcan_prediction
 
 sage.rna.path  = file.path(data.dir, "sage_39_wgs_for_rnaseq_expression_melted.txt")
 
-rdata.path     = file.path("sage_predixcan_allresults_allplots.Rdata")
+rdata.path     = file.path(output.dir, "sage_predixcan_allresults_allplots.Rdata")
 
 # =======================================================================================
 # load data
@@ -101,7 +154,6 @@ sage = fread(sage.rna.path, header = TRUE)
 repos = c("DGN", "GTEx_v6p", "GTEx_v7", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL")
 repo.results = list(dgn, gtex6, gtex7, mesa.afa, mesa.afhi, mesa.cau, mesa.all)
 for (i in 1:length(repos)) {
-    #colnames(repo.results[[i]]) = c("SubjectID", "Gene", paste0("Predicted_Expr_", repos[i]))
     colnames(repo.results[[i]]) = c("SubjectID", "Gene", "Predicted_Expr")
     repo.results[[i]]$Prediction.Weights =  repos[i]
 }
@@ -109,57 +161,28 @@ for (i in 1:length(repos)) {
 # perform a full join of all prediction results
 predixcan.all = repo.results %>% reduce(full_join, by = c("SubjectID", "Gene", "Prediction.Weights", "Predicted_Expr")) %>% as.data.table
 
-# melt measurements prior to merge
-#sage.melt = melt(sage[,-c(1:3)], id.vars = "Gene", variable.name = "SubjectID", value.name = "Measured_Expr")
-sage.melt = sage
+# if necessary, melt measurements prior to merge
+# when data.table 'sage. doesn't have 3 cols, we assume that it is in a BED format
+if (dim(sage) != 3) {
+    sage.melt = melt(sage[,-c(1:3)], id.vars = "Gene", variable.name = "SubjectID", value.name = "Measured_Expr")
+} else {
+    sage.melt = sage
+}
 names(sage.melt) = c("Gene", "SubjectID", "Measured_Expr")
 
 # merge predictions with measurements
 sage.predixcan.all = merge(sage.melt, predixcan.all, by = c("Gene", "SubjectID"), all = TRUE)
+
+# recover some memory
+predixcan.all = sage.melt = FALSE
+gc()
 
 
 # =======================================================================================
 # analyze predictions 
 # =======================================================================================
 
-## seed a list to save results
-## TODO: can we preallocate the list with correct names?
-#repo.results.predvmeas = list() 
-#
-#
-## compute genewise regressions
-#for (i in 1:length(repos)) {
-#    my.repo = repos[i]
-#    my.lm.formula = paste0("Predicted_Expr_", my.repo, " ~ Measured_Expr")
-#    my.corr.formula = paste0("~ Predicted_Expr_", my.repo, " + Measured_Expr")
-#
-#    r2s = sage.predixcan.all %>%
-#        group_by(Gene) %>%
-#        do(lmtest(., my.lm.formula)) %>%
-#        as.data.table %>%
-#        unique
-#    colnames(r2s) = c("Gene", "R2", "Num_Pred")
-#    r2s$Repo = my.repo
-#
-#    corrs = sage.predixcan.all %>%
-#        group_by(Gene) %>%
-#        do(cortest(., my.corr.formula)) %>% # use previous subroutine to perform correlation test and extract three columns (gene, correlation, p-value)
-#        as.data.table %>% # cast as data.table to purge duplicate rows
-#        unique # need this because inelegant subroutine prints repeated rows, 1 per sample instead of 1 per gene group
-#    colnames(corrs) = c("Gene", "Corr", "Corr_pval")
-#    corrs$Repo = my.repo
-#    
-#    my.results = merge(r2s, corrs, by = c("Gene", "Repo"), all = TRUE)
-#    repo.results.predvmeas[[my.repo]] = my.results 
-#    
-#}
-#
-#predixcan.all = sage.melt = corrs = r2s = FALSE
-predixcan.all = sage.melt = FALSE
-gc()
-#sage.predixcan.all.results = rbindlist(repo.results.predvmeas) 
 sage.predixcan.all.results = compute.r2.corr(sage.predixcan.all)
-#repo.results.predvmeas = FALSE
 gc()
 
 
@@ -167,11 +190,10 @@ gc()
 # plot results
 # =======================================================================================
 
-# set color palette and boxplot labels
-my.colors = c("blue", "orange", "red", "gold")
-
 # gplot2 colorblind-friendly palette with grey:
 cbPalette = c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7", "#999999", "#E69F00", "#56B4E9", "#009E73") 
+
+# set boxplot labels
 my.boxplot.labels = c("GTEx v6p", "GTEx v7", "DGN", "MESA_AFA", "MESA_AFHI", "MESA_CAU", "MESA_ALL", "Test: GTEx v7", "Test: MESA AFA", "Test: MESA AFHI", "Test: MESA CAU", "Test: MESA ALL")
 
 # compare imputation performance from all four prediction weights
@@ -193,7 +215,8 @@ predixcan.mesa.all.metrics  = fread(predixcan.mesa.all.metrics.path)
 repos.test = c("Test: GTEx_v7", "Test: MESA_AFA", "Test: MESA_AFHI", "Test: MESA_CAU", "Test: MESA_ALL")
 repo.test = list(predixcan.gtex7.metrics, predixcan.mesa.afa.metrics, predixcan.mesa.afhi.metrics, predixcan.mesa.cau.metrics, predixcan.mesa.all.metrics)
 for (i in 1:length(repos.test)) {
-    # note that at this point the 2nd column actually contains HUGE identifiers
+
+    # note that at this point the 2nd column actually contains HUGO identifiers for genes
     colnames(repo.test[[i]]) = c("Gene", "Prediction.Weights", "R2", "Correlation")
 
     # 2nd column now overwritten with repo name
@@ -212,8 +235,6 @@ all.results = sage.predixcan.all.results %>%
     select(Prediction.Weights, Gene, R2, Correlation) %>%
     as.data.table %>%
     rbind(., predixcan.all.test, use.names = TRUE, fill = TRUE) 
-
-
 
 r2.all = all.results %>%
     select(Gene, Prediction.Weights, R2) %>%
@@ -252,9 +273,11 @@ my.hist.r2 = ggplot(r2.all, aes(x = R2)) +
     facet_wrap(~ Prediction.Weights)
  
 # save plots to file
-ggsave(plot = my.boxplot.r2, filename = "sage.predixcan.r2.all.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.violinplot.r2, filename = "sage.predixcan..r2.violinplot.png", dpi = 300, type = "cairo")
-ggsave(plot = my.hist.r2, filename = "sage.predixcan.r2.all.histogram.png", dpi = 300, type = "cairo")
+boxplot.r2.path = file.path(output.dir, paste0("sage.predixcan.r2.all.boxplot.", plot.type))
+violinplot.r2.path = file.path(output.dir, paste0("sage.predixcan.r2.all.violinplot.", plot.type))
+histogram.r2.path = file.path(output.dir, paste0("sage.predixcan.r2.all.histogram.", plot.type))
+
+save.plots(my.boxplot.r2, boxplot.r2.path, my.violinplot.r2, violinplot.r2.path, my.hist.r2, histogram.r2.path)
 
 
 # do for only common genes
@@ -291,9 +314,11 @@ my.hist.r2.commongenes = ggplot(r2.commongenes, aes(x = R2)) +
     facet_wrap(~ Prediction.Weights)
 
 # save plots to file
-ggsave(plot = my.boxplot.r2.commongenes, filename = "sage.predixcan.r2.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.violinplot.r2.commongenes, filename = "sage.predixcan.r2.commongenes.violinplot.png", dpi = 300, type = "cairo")
-ggsave(plot = my.hist.r2.commongenes, filename = "sage.predixcan.r2.commongenes.histogram.png", dpi = 300, type = "cairo")
+boxplot.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.boxplot.", plot.type))
+violinplot.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.violinplot.", plot.type))
+histogram.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.histogram.", plot.type))
+
+save.plots(my.boxplot.r2.commongenes, boxplot.r2.commongenes.path, my.violinplot.r2.commongenes, violinplot.r2.commongenes.path, my.hist.r2.commongenes, histogram.r2.commongenes.path)
 
 
 # do same, but for correlations instead of R2s
@@ -301,9 +326,7 @@ rho.all = all.results %>%
     select(Gene, Prediction.Weights, Correlation) %>% 
     as.data.table %>%
     na.omit
-#colnames(rho.all) = c("Gene", "Prediction.Weights", "Correlation")
 setorderv(rho.all, "Prediction.Weights")
-#ngenes.rho = rho.all  %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
 ngenes.rho = ngenes.r2
 
 my.hist.rho = ggplot(rho.all, aes(x = Correlation)) +
@@ -327,9 +350,11 @@ my.violinplot.rho = ggplot(rho.all, aes(x = Prediction.Weights, y = Correlation)
     ylab("Correlations") +
     ggtitle(paste0("Distribution of correlations across different prediction weight sets for ", ngenes.rho, " genes"))
 
-ggsave(plot = my.boxplot.rho, filename = "sage.predixcan.rho.all.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.hist.rho, filename = "sage.predixcan.rho.all.histogram.png")
-ggsave(plot = my.violinplot.rho, filename = "sage.predixcan.rho.all.violinplot.png")
+boxplot.rho.path = file.path(output.dir, paste0("sage.predixcan.rho.all.boxplot.", plot.type))
+violinplot.rho.path = file.path(output.dir, paste0("sage.predixcan.rho.all.violinplot.", plot.type))
+histogram.rho.path = file.path(output.dir, paste0("sage.predixcan.rho.all.histogram.", plot.type))
+
+save.plots(my.boxplot.rho, boxplot.rho.path, my.violinplot.rho, violinplot.rho.path, my.hist.rho, histogram.rho.path)
 
 # could filter for rho in common
 # but for basis of comparison, we really should focus on common genes from R2
@@ -341,8 +366,8 @@ ggsave(plot = my.violinplot.rho, filename = "sage.predixcan.rho.all.violinplot.p
 #    as.data.table
 #all.rho.commongenes = all.rho %>% dplyr::filter(Gene %in% rho.commongenes$Gene)
 #ncommongenes.rho = all.rho.commongenes %>% select(Gene) %>% unlist %>% sort %>% unique %>% length 
-rho.commongenes = rho.all %>% filter(Gene %in% commongenes.r2$Gene)
-commongenes.rho = commongenes.r2
+rho.commongenes  = rho.all %>% filter(Gene %in% commongenes.r2$Gene)
+commongenes.rho  = commongenes.r2
 ncommongenes.rho = ncommongenes.r2
 
 
@@ -367,9 +392,11 @@ my.violinplot.rho.commongenes = ggplot(rho.commongenes, aes(x = Prediction.Weigh
     ylab("Correlations") +
     ggtitle(paste0("Distribution of correlations across different prediction weight sets for ", ncommongenes.rho, " genes in common"))
 
-ggsave(plot = my.boxplot.rho.commongenes, filename = "sage.predixcan.rho.commongenes.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.hist.rho.commongenes, filename = "sage.predixcan.rho.commongenes.histogram.png", dpi = 300, type = "cairo")
-ggsave(plot = my.violinplot.rho.commongenes, filename = "sage.predixcan.rho.commongenes.violinplot.png", dpi = 300, type = "cairo")
+boxplot.rho.commongenes.path = file.path(output.dir, paste0("sage.predixcan.rho.commongenes.boxplot.", plot.type))
+violinplot.rho.commongenes.path = file.path(output.dir, paste0("sage.predixcan.rho.commongenes.violinplot.", plot.type))
+histogram.rho.commongenes.path = file.path(output.dir, paste0("sage.predixcan.rho.commongenes.histogram.", plot.type))
+
+save.plots(my.boxplot.rho.commongenes, boxplot.rho.commongenes.path, my.violinplot.rho.commongenes, violinplot.rho.commongenes.path, my.hist.rho.commongenes, histogram.rho.commongenes.path)
 
 
 # can now compile some summaries
@@ -431,9 +458,11 @@ my.hist.r2.commongenes = ggplot(r2.commongenes.poscorr, aes(x = R2)) +
     facet_wrap(~ Prediction.Weights)
 
 # save plots to file
-ggsave(plot = my.boxplot.r2.commongenes, filename = "sage.predixcan.r2.commongenes.poscorr.boxplot.png", dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
-ggsave(plot = my.violinplot.r2.commongenes, filename = "sage.predixcan..r2.commongenes.poscorr.violinplot.png", dpi = 300, type = "cairo")
-ggsave(plot = my.hist.r2.commongenes, filename = "sage.predixcan.r2.commongenes.poscorr.histogram.png", dpi = 300, type = "cairo")
+boxplot.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.poscorr.boxplot.", plot.type))
+violinplot.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.poscorr.violinplot.", plot.type))
+histogram.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.poscorr.histogram.", plot.type))
+
+save.plots(my.boxplot.r2.commongenes, boxplot.r2.commongenes.path , my.violinplot.r2.commongenes, violinplot.r2.commongenes.path, my.hist.r2.commongenes, histogram.r2.commongenes.path)
 
 # save Rdata file
 save.image(rdata.path)
