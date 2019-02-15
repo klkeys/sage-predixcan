@@ -26,10 +26,10 @@ option_list = list(
         metavar = "character"
     ),
     make_option(
-        c("-b", "--data-dir"),
+        c("-b", "--expression-file"),
         type    = "character",
         default = NULL,
-        help    = "Directory where RNA-Seq data are stored.",
+        help    = "File where RNA-Seq data are stored.",
         metavar = "character"
     ),
     make_option(
@@ -100,6 +100,48 @@ compute.r2.corr = function(df){
     return(new.df)
 }
 
+
+plot.boxplot.r2 = function(x, ngenes, scale.fill.palette, boxplot.labels) {
+
+    my.boxplot = ggplot(x, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
+        geom_boxplot() +
+        xlab("Prediction Weight Set") +
+        ylab(expression(R^{2})) +
+        ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ngenes) ~ "genes")) +
+        scale_fill_manual(values = scale.fill.palette) +
+        scale_x_discrete(labels = boxplot.labels) +
+        ylim(-0.1, 1) +
+        theme(legend.position = "none")
+
+    return(my.boxplot)
+}
+
+
+plot.violinplot.r2 = function(x, ngenes) {
+
+    my.violinplot = ggplot(x, aes(x = Prediction.Weights, y = R2)) +
+        geom_violin() +
+        xlab("Prediction Weight Set") +
+        ylab(expression(R^{2})) +
+        ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ngenes) ~ "genes"))
+
+    return(my.violinplot)
+}
+
+plot.hist.r2 = function(x, ngenes) {
+
+    my.hist = ggplot(x, aes(x = R2)) +
+        geom_histogram(aes(y = ..density..)) +
+        geom_density() +
+        xlab("Prediction Weight Set") +
+        ylab(expression(R^{2})) +
+        ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ ngenes ~ "genes")) +
+        facet_wrap(~ Prediction.Weights)
+ 
+    return(my.hist)
+}
+
+
 save.plots = function(g1, name1, g2, name2, g3, name3){
     # boxplot
     ggsave(plot = g1, filename = name1, dpi = 300, type = "cairo", width = 15, height = 5, units = "in")
@@ -117,8 +159,9 @@ save.plots = function(g1, name1, g2, name2, g3, name3){
 # file and directory paths 
 # =======================================================================================
 predixcan.dir  = opt$predixcan_dir 
-data.dir       = opt$data.dir
+#data.dir       = opt$data.dir
 output.dir     = opt$output_dir
+plot.type      = opt$plot_type
 
 dgn.path       = file.path(predixcan.dir, "DGN",  "DGN_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
 gtex6.path     = file.path(predixcan.dir, "GTEx", "GTEx_v6p_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
@@ -128,7 +171,8 @@ mesa.afhi.path = file.path(predixcan.dir, "MESA", "MESA_AFHI_predixcan_predictio
 mesa.cau.path  = file.path(predixcan.dir, "MESA", "MESA_CAU_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
 mesa.all.path  = file.path(predixcan.dir, "MESA", "MESA_ALL_predixcan_prediction_ALLCHR_predicted_expression_melted.txt")
 
-sage.rna.path  = file.path(data.dir, "sage_39_wgs_for_rnaseq_expression_melted.txt")
+#sage.rna.path  = file.path(data.dir, "sage_39_wgs_for_rnaseq_expression_melted.txt")
+sage.rna.path  = opt$expression_file
 
 rdata.path     = file.path(output.dir, "sage_predixcan_allresults_allplots.Rdata")
 
@@ -163,18 +207,18 @@ predixcan.all = repo.results %>% reduce(full_join, by = c("SubjectID", "Gene", "
 
 # if necessary, melt measurements prior to merge
 # when data.table 'sage. doesn't have 3 cols, we assume that it is in a BED format
-if (dim(sage) != 3) {
+if (ncol(sage) != 3) {
     sage.melt = melt(sage[,-c(1:3)], id.vars = "Gene", variable.name = "SubjectID", value.name = "Measured_Expr")
 } else {
     sage.melt = sage
+    names(sage.melt) = c("Gene", "SubjectID", "Measured_Expr")
 }
-names(sage.melt) = c("Gene", "SubjectID", "Measured_Expr")
 
 # merge predictions with measurements
 sage.predixcan.all = merge(sage.melt, predixcan.all, by = c("Gene", "SubjectID"), all = TRUE)
 
 # recover some memory
-predixcan.all = sage.melt = FALSE
+predixcan.all = sage = sage.melt = FALSE
 gc()
 
 
@@ -183,6 +227,7 @@ gc()
 # =======================================================================================
 
 sage.predixcan.all.results = compute.r2.corr(sage.predixcan.all)
+sage.predixcan.all = FALSE
 gc()
 
 
@@ -198,17 +243,17 @@ my.boxplot.labels = c("GTEx v6p", "GTEx v7", "DGN", "MESA_AFA", "MESA_AFHI", "ME
 
 # compare imputation performance from all four prediction weights
 # must first load GTEx v7 testing R2s from PredictDB
-predixcan.gtex7.metrics.path     = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan", "gtex7.test.metrics.txt")
-predixcan.mesa.afa.metrics.path  = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan", "mesa.AFA.test.metrics.txt")
-predixcan.mesa.afhi.metrics.path = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan", "mesa.AFHI.test.metrics.txt")
-predixcan.mesa.cau.metrics.path  = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan", "mesa.CAU.test.metrics.txt")
-predixcan.mesa.all.metrics.path  = file.path(Sys.getenv("HOME"), "gala_sage", "rnaseq", "predixcan", "mesa.ALL.test.metrics.txt")
+predixcan.gtex7.metrics.path     = file.path(predixcan.dir, "gtex7.test.metrics.txt")
+predixcan.mesa.afa.metrics.path  = file.path(predixcan.dir, "mesa.AFA.test.metrics.txt")
+predixcan.mesa.afhi.metrics.path = file.path(predixcan.dir, "mesa.AFHI.test.metrics.txt")
+predixcan.mesa.cau.metrics.path  = file.path(predixcan.dir, "mesa.CAU.test.metrics.txt")
+predixcan.mesa.all.metrics.path  = file.path(predixcan.dir, "mesa.ALL.test.metrics.txt")
 
-predixcan.gtex7.metrics     = fread(predixcan.gtex7.metrics.path) 
-predixcan.mesa.afa.metrics  = fread(predixcan.mesa.afa.metrics.path) 
-predixcan.mesa.afhi.metrics = fread(predixcan.mesa.afhi.metrics.path) 
-predixcan.mesa.cau.metrics  = fread(predixcan.mesa.cau.metrics.path) 
-predixcan.mesa.all.metrics  = fread(predixcan.mesa.all.metrics.path) 
+predixcan.gtex7.metrics     = fread(predixcan.gtex7.metrics.path, header = TRUE) 
+predixcan.mesa.afa.metrics  = fread(predixcan.mesa.afa.metrics.path, header = TRUE) 
+predixcan.mesa.afhi.metrics = fread(predixcan.mesa.afhi.metrics.path, header = TRUE) 
+predixcan.mesa.cau.metrics  = fread(predixcan.mesa.cau.metrics.path, header = TRUE) 
+predixcan.mesa.all.metrics  = fread(predixcan.mesa.all.metrics.path, header = TRUE) 
 
 # must rename columns of each data.table, particularly the ones with predicted expression values
 # this facilitates merging them later
@@ -263,15 +308,18 @@ my.violinplot.r2 = ggplot(r2.all, aes(x = Prediction.Weights, y = R2)) +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
     ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ngenes.r2) ~ "genes"))
-
 my.hist.r2 = ggplot(r2.all, aes(x = R2)) +
     geom_histogram(aes(y = ..density..)) +
     geom_density() +
     xlab("Prediction Weight Set") +
     ylab(expression(R^{2})) +
-    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ ngenes.r2 ~ "genes")) +
+    ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ngenes.r2) ~ "genes")) +
     facet_wrap(~ Prediction.Weights)
- 
+
+#my.boxplot.r2 = plot.boxplot.r2(r2.all, ngenes.r2, cbPalette, my.boxplot.labels)
+#my.violinplot.r2 = plot.violinplot.r2(r2.all, ngenes.r2)
+#my.hist.r2 = plot.hist.r2(r2.all, ngenes.r2)
+
 # save plots to file
 boxplot.r2.path = file.path(output.dir, paste0("sage.predixcan.r2.all.boxplot.", plot.type))
 violinplot.r2.path = file.path(output.dir, paste0("sage.predixcan.r2.all.violinplot.", plot.type))
@@ -313,6 +361,10 @@ my.hist.r2.commongenes = ggplot(r2.commongenes, aes(x = R2)) +
     ggtitle(bquote("Distribution of" ~ R^2 ~ "across different prediction weight sets over" ~ .(ncommongenes.r2) ~ "common genes")) +
     facet_wrap(~ Prediction.Weights)
 
+#my.boxplot.r2.commongenes = plot.boxplot.r2(commongenes.r2, ncommongenes.r2, cbPalette, my.boxplot.labels)
+#my.violinplot.r2.commongenes = plot.violinplot.r2(commongenes.r2, ncommongenes.r2)
+#my.hist.r2.commongenes = plot.hist.r2(commongenes.r2, ncommongenes.r2)
+
 # save plots to file
 boxplot.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.boxplot.", plot.type))
 violinplot.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.commongenes.violinplot.", plot.type))
@@ -326,6 +378,7 @@ rho.all = all.results %>%
     select(Gene, Prediction.Weights, Correlation) %>% 
     as.data.table %>%
     na.omit
+#colnames(rho.all) = c("Gene", "Prediction.Weights", "Correlation")
 setorderv(rho.all, "Prediction.Weights")
 ngenes.rho = ngenes.r2
 
@@ -408,16 +461,16 @@ genes.predicted.perrepo = all.results %>% na.omit %>% count(Prediction.Weights) 
 genes.predicted.poscorr.perrepo = all.results %>% na.omit %>% filter(Correlation > 0) %>% count(Prediction.Weights) %>% as.data.table
 
 # average r2 by repo?
-r2.summaries  = all.r2 %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
+r2.summaries  = r2.all %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
 
 # average r2 by repo over common genes?
-r2.commongenes.summaries  = all.r2.commongenes %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
+r2.commongenes.summaries  = r2.commongenes %>% group_by(Prediction.Weights) %>% summarize(r2 = mean(R2, na.rm = T)) %>% as.data.table
 
 # average rho by repo?
-rho.summaries = all.rho %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
+rho.summaries = rho.all %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
 
 # average rho by repo over common genes?
-rho.commongenes.summaries = all.rho.commongenes %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
+rho.commongenes.summaries = rho.commongenes %>% group_by(Prediction.Weights) %>% summarize(rho = mean(Correlation, na.rm = T)) %>% as.data.table
 
 # last detail:
 # make plots for common genes with poscorr
@@ -430,7 +483,8 @@ commongenes.poscorr.r2 = all.results %>%
     dplyr::filter(n > 11) %>% 
     select(Gene) %>% 
     as.data.table
-r2.commongenes.poscorr = all.r2.corr %>% dplyr::filter(Gene %in% commongenes.poscorr.r2$Gene)
+#colnames(commongenes.r2) = c("Gene", "Prediction.Weights", "R2")
+r2.commongenes.poscorr = r2.all %>% dplyr::filter(Gene %in% commongenes.poscorr.r2$Gene)
 ncommongenes.r2.poscorr = r2.commongenes.poscorr %>% select(Gene) %>% unlist %>% unname %>% sort %>% unique %>% length 
 
 my.boxplot.r2.commongenes = ggplot(r2.commongenes.poscorr, aes(x = Prediction.Weights, y = R2, fill = Prediction.Weights)) +
