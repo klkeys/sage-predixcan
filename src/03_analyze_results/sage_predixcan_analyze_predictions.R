@@ -518,5 +518,42 @@ histogram.r2.commongenes.path = file.path(output.dir, paste0("sage.predixcan.r2.
 
 save.plots(my.boxplot.r2.commongenes, boxplot.r2.commongenes.path , my.violinplot.r2.commongenes, violinplot.r2.commongenes.path, my.hist.r2.commongenes, histogram.r2.commongenes.path)
 
+# last plot: compare R2 in SAGE and GTEx 7
+# will filter data into format easy for plotting
+# will throw in summary since those numbers appear in text
+sage.gtex7.r2 = r2.all %>%
+    # extract just GTEx7 info
+    filter(Prediction.Weights %in% c("GTEx_v7", "Test: GTEx_v7")) %>% 
+    # recast into N x 2 data.frame for easier plotting
+    dcast(., Gene ~ Prediction.Weights) %>%
+    # focus on GTEx v7 genes with testing R2 > 0.2
+    filter(`Test: GTEx_v7` > 0.2) %>%
+    as.data.table %>%
+    # rename the test R2 column for easier plotting
+    rename(., "Test_R2" = "Test: GTEx_v7")
+
+# summary
+summary(sage.gtex7.r2)
+
+# now construct plot
+sage.gtex7.plot = sage.gtex7.r2 %>%
+    ggplot(., aes(x = Test_R2, y = GTEx_v7)) +
+        geom_point() +
+        # add regression line (blue) to compare points
+        geom_smooth(se = TRUE, method = "lm") +
+        # add y=x line (red dotted)
+        geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+        ggtitle("PredictDB performance in SAGE with GTEx v7 weights") +
+        xlab(bquote("PredictDB training "~ R^2 ~ " in GTEx v7")) +
+        ylab(bquote("PrediXcan " ~ R^2 ~ " in SAGE"))
+
+# save plot to file
+sage.gtex7.plot.path = file.path(output.dir, paste0("sage.predixcan.r2.gtex7.dotplot.", plot.type))
+ggsave(plot = sage.gtex7.plot.path, filename = sage.gtex7.plot.path, dpi = 300, type = "cairo") 
+
 # save Rdata file
 save.image(rdata.path)
+
+# write results to output table
+results.table.path = file.path(output.dir, "sage.predixcan.all.gene.results.txt")
+fwrite(all.results, file = results.table.path, sep = "\t", quote = FALSE)
